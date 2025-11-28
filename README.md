@@ -1,4 +1,4 @@
-# SmartAssign - Automated Time Management System
+# SmartAssign
 
 ## Summary
 
