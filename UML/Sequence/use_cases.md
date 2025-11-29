@@ -1,0 +1,99 @@
+# Backend Use Cases
+
+## Use Case Name: Register User
+- **ID:** UC-001
+- **Actor:** User (Unauthenticated)
+- **Description:** Registers a new user account with name, email, and password.
+- **Trigger:** User submits registration form.
+- **Type:** External
+- **Preconditions:**
+  - Registration endpoint available.
+  - Email not already registered.
+- **Normal Course // Information for Steps:**
+  - Step 1: User submits {Name, Email, Password}.
+  - Step 2: System validates input.
+  - Step 3: System checks for existing email.
+  - Step 4: System hashes password and creates user.
+  - Step 5: System generates JWT token.
+  - Step 6: System returns {message, user, token}.
+- **Postconditions:**
+  - New user persisted.
+  - JWT issued.
+- **Exceptions:**
+  - E1: Invalid input → 400 with validation errors.
+  - E2: Email exists → 409 conflict.
+  - E3: Server/DB error → 500.
+- **Summary Inputs:**
+  - Name: string
+  - Email: string
+  - Password: string
+- **Summary Outputs:**
+  - message: string
+  - user: { id, name, email, createdAt }
+  - token: string
+
+---
+
+## Use Case Name: Create Task
+- **ID:** UC-002
+- **Actor:** User (Authenticated)
+- **Description:** Creates a task with metadata (title, priority, etc.) under the user.
+- **Trigger:** User submits task creation form.
+- **Type:** External
+- **Preconditions:**
+  - Valid JWT in `Authorization: Bearer <token>`.
+  - Task input meets validation rules.
+- **Normal Course // Information for Steps:**
+  - Step 1: User submits task payload.
+  - Step 2: System verifies JWT.
+  - Step 3: System validates task fields.
+  - Step 4: System persists task with `userId`.
+  - Step 5: System returns {message, task}.
+- **Postconditions:**
+  - Task persisted linked to user.
+- **Exceptions:**
+  - E1: Missing/invalid token → 401.
+  - E2: Validation error → 400.
+  - E3: Persistence error → 500.
+- **Summary Inputs:**
+  - Title: string
+  - Description?: string
+  - DueDate?: Date
+  - Priority: "high" | "medium" | "low"
+  - EstimatedTime?: number (minutes)
+  - Category?: string
+  - Status?: string
+- **Summary Outputs:**
+  - message: string
+  - task: TaskModel (full task fields)
+
+---
+
+## Use Case Name: Get Schedule Suggestions
+- **ID:** UC-003
+- **Actor:** User (Authenticated)
+- **Description:** Retrieves suggested time slots for tasks between start and end dates.
+- **Trigger:** User requests schedule suggestions for a date range.
+- **Type:** External
+- **Preconditions:**
+  - Valid JWT in `Authorization: Bearer <token>`.
+  - `startDate` and `endDate` provided and valid.
+- **Normal Course // Information for Steps:**
+  - Step 1: User calls GET with `startDate`, `endDate`.
+  - Step 2: System verifies JWT.
+  - Step 3: System fetches events in range.
+  - Step 4: System fetches user tasks and computes availability.
+  - Step 5: System returns {message, suggestions, count}.
+- **Postconditions:**
+  - Suggestions computed and delivered to client.
+- **Exceptions:**
+  - E1: Missing/invalid token → 401.
+  - E2: Invalid dates → 400.
+  - E3: Server/DB error → 500.
+- **Summary Inputs:**
+  - startDate: ISO string
+  - endDate: ISO string
+- **Summary Outputs:**
+  - message: string
+  - suggestions: [{ taskId, scheduledStart, scheduledEnd, score }]
+  - count: number
