@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import Api from '../Utils/Api';
+import Api, { AuthEvents } from '../Utils/Api';
 
 interface User {
   Id: string;
@@ -23,6 +23,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [Token, SetToken] = useState<string | null>(null);
   const [IsLoading, SetIsLoading] = useState(true);
 
+  const Logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    SetToken(null);
+    SetUser(null);
+  };
+
   useEffect(() => {
     // Check for stored auth data on mount
     const StoredToken = localStorage.getItem('token');
@@ -33,6 +40,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       SetUser(JSON.parse(StoredUser));
     }
     SetIsLoading(false);
+
+    // Listen for logout events from API interceptor
+    AuthEvents.onLogout.add(Logout);
+    return () => {
+      AuthEvents.onLogout.delete(Logout);
+    };
   }, []);
 
   const Login = async (Email: string, Password: string) => {
@@ -55,13 +68,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     SetToken(token);
     SetUser(user);
-  };
-
-  const Logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    SetToken(null);
-    SetUser(null);
   };
 
   return (

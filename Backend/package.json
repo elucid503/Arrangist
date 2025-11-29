@@ -8,14 +8,15 @@
     "start": "bun run src/Index.ts"
   },
   "dependencies": {
-    "hono": "^3.11.7",
-    "mongoose": "^8.0.3",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "zod": "^3.22.4",
     "date-fns": "^3.0.0",
+    "hono": "^3.11.7",
     "ical-generator": "^6.0.1",
-    "ics": "^3.7.2"
+    "ics": "^3.7.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.0.3",
+    "openai": "^6.9.1",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/bun": "latest",

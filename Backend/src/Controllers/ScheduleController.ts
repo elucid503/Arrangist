@@ -1,7 +1,5 @@
 import { Context } from 'hono'
   
-import { TaskModel } from 'src/Models/Task';
-  
 import { GetUserID } from '../Middleware/Auth';
 import { SchedulingService } from '../Services/SchedulingService';
 
@@ -45,9 +43,9 @@ export class ScheduleController {
         
       }
 
-      const UpdatedTask = await SchedulingService.ApplyScheduleSuggestion(UserID, TaskId, new Date(ScheduledStart), new Date(ScheduledEnd));
+      const Result = await SchedulingService.ApplyScheduleSuggestion(UserID, TaskId, new Date(ScheduledStart), new Date(ScheduledEnd));
 
-      if (!UpdatedTask) {
+      if (!Result.task) {
 
         return c.json({ error: 'Task not found' }, 404);
 
@@ -56,7 +54,8 @@ export class ScheduleController {
       return c.json({
 
         message: 'Schedule applied successfully',
-        task: UpdatedTask,
+        task: Result.task,
+        event: Result.event,
 
       });
 
@@ -73,27 +72,24 @@ export class ScheduleController {
     const UserID = GetUserID(c);
     const TaskId = c.req.param('id');
 
-    // Unschedule the task
-
-    return await TaskModel.findOneAndUpdate({ _id: TaskId, UserID }, { IsScheduled: false, ScheduledStartTime: undefined, ScheduledEndTime: undefined, }, { new: true }).then(async (Task) => {
-        
-      if (!Task) {
-          
-        return c.json({ error: 'Task not found' }, 404);
-        
+    // Get the excluded time from the request body (the currently suggested time to avoid)
+    let ExcludedStart: Date | undefined;
+    
+    try {
+      const Body = await c.req.json();
+      if (Body.ExcludedStart) {
+        ExcludedStart = new Date(Body.ExcludedStart);
       }
+    } catch {
+      // No body provided, that's fine
+    }
 
-      // Generate new suggestions
-
-      const Suggestions = await SchedulingService.GenerateScheduleSuggestions(UserID);
-      const TaskSuggestion = Suggestions.find(s => s.TaskId == TaskId);
+    // Generate a new suggestion for this specific task, excluding the previous time
+    return await SchedulingService.GenerateSingleTaskSuggestion(UserID, TaskId, ExcludedStart).then((NewSuggestion) => {
 
       return c.json({
-
-        message: 'Task unscheduled successfully',
-        task: Task,
-        newSuggestion: TaskSuggestion || null,
-          
+        message: NewSuggestion ? 'New time found successfully' : 'No alternative time slots available',
+        newSuggestion: NewSuggestion,
       });
       
     }).catch((error: any) => {

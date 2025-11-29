@@ -2,6 +2,7 @@ import { Context } from 'hono';
 
 import { UserModel } from '../Models/User';
 
+import { GetUserID } from '../Middleware/Auth';
 import { HashPassword, ComparePassword, GenerateToken } from '../Utils/Auth';
 import { RegisterSchema, LoginSchema } from '../Utils/Validation';
 
@@ -132,7 +133,7 @@ export class UserController {
 
   static async GetProfile(c: Context) {
 
-    const UserID = c.get('UserID');
+    const UserID = GetUserID(c);
     
     return await UserModel.findById(UserID).select('-Password').then((User) => {
 

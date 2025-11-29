@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import Navbar from '../Components/Navbar';
+import Navbar, { MobileBottomNav } from '../Components/Navbar';
 import TaskCard from '../Components/TaskCard';
 import ScheduleSuggestionCard from '../Components/ScheduleSuggestionCard';
 import Api from '../Utils/Api';
-import { Calendar, CheckSquare, Clock, TrendingUp } from 'lucide-react';
+import { Calendar, CheckSquare, Clock, TrendingUp, Sparkles, Send, Loader2 } from 'lucide-react';
 
 interface Task {
   _id: string;
@@ -32,11 +32,22 @@ interface ScheduleSuggestion {
   EstimatedTime: number;
 }
 
+interface AIMessage {
+  type: 'user' | 'assistant';
+  content: string;
+}
+
 const DashboardPage: React.FC = () => {
   const [Tasks, SetTasks] = useState<Task[]>([]);
   const [Events, SetEvents] = useState<Event[]>([]);
   const [Suggestions, SetSuggestions] = useState<ScheduleSuggestion[]>([]);
   const [IsLoading, SetIsLoading] = useState(true);
+  const [ReschedulingTaskId, SetReschedulingTaskId] = useState<string | null>(null);
+  
+  // AI Input state
+  const [AIInput, SetAIInput] = useState('');
+  const [AIMessages, SetAIMessages] = useState<AIMessage[]>([]);
+  const [IsAIProcessing, SetIsAIProcessing] = useState(false);
 
   useEffect(() => {
     FetchDashboardData();
@@ -44,7 +55,7 @@ const DashboardPage: React.FC = () => {
 
   const FetchDashboardData = async () => {
     await Promise.all([
-      Api.get('/tasks?status=pending&status=in-progress'),
+      Api.get('/tasks'),
       Api.get('/calendar/events'),
       Api.get('/schedule/suggestions'),
     ])
@@ -95,8 +106,58 @@ const DashboardPage: React.FC = () => {
       });
   };
 
-  const HandleRejectSuggestion = () => {
-    FetchDashboardData();
+  const HandleRejectSuggestion = async (Suggestion: ScheduleSuggestion) => {
+    SetReschedulingTaskId(Suggestion.TaskId);
+    try {
+      const Response = await Api.post(`/schedule/reschedule/${Suggestion.TaskId}`, {
+        ExcludedStart: Suggestion.SuggestedStart,
+      });
+      const NewSuggestion = Response.data.newSuggestion;
+      
+      if (NewSuggestion) {
+        SetSuggestions((prev) =>
+          prev.map((s) => (s.TaskId === Suggestion.TaskId ? NewSuggestion : s))
+        );
+      } else {
+        // No new time slot available, remove from suggestions
+        SetSuggestions((prev) => prev.filter((s) => s.TaskId !== Suggestion.TaskId));
+      }
+    } catch (Error) {
+      console.error('Error rescheduling suggestion:', Error);
+    } finally {
+      SetReschedulingTaskId(null);
+    }
+  };
+
+  // AI Task Input Handler
+  const HandleAISubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!AIInput.trim() || IsAIProcessing) return;
+
+    const userMessage = AIInput.trim();
+    SetAIMessages((prev) => [...prev, { type: 'user', content: userMessage }]);
+    SetAIInput('');
+    SetIsAIProcessing(true);
+
+    try {
+      const Response = await Api.post('/ai/parse-task', { input: userMessage });
+      const { confirmation, scheduleSuggestion } = Response.data;
+      
+      SetAIMessages((prev) => [...prev, { type: 'assistant', content: confirmation }]);
+      
+      // Add the new suggestion if available
+      if (scheduleSuggestion) {
+        SetSuggestions((prev) => [scheduleSuggestion, ...prev]);
+      }
+      
+      // Refresh data to show the new task
+      FetchDashboardData();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || 'Sorry, I couldn\'t process that. Please try again.';
+      SetAIMessages((prev) => [...prev, { type: 'assistant', content: `${errorMessage}` }]);
+    } finally {
+      SetIsAIProcessing(false);
+    }
   };
 
   const PendingTasks = Tasks.filter((T) => T.Status !== 'completed');
@@ -115,8 +176,9 @@ const DashboardPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 md:pb-0">
       <Navbar />
+      <MobileBottomNav />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
 
@@ -177,6 +239,7 @@ const DashboardPage: React.FC = () => {
                     Suggestion={Suggestion}
                     OnAccept={HandleAcceptSuggestion}
                     OnReject={HandleRejectSuggestion}
+                    IsRescheduling={ReschedulingTaskId === Suggestion.TaskId}
                   />
                 ))}
               </div>
@@ -199,6 +262,91 @@ const DashboardPage: React.FC = () => {
               {PendingTasks.length === 0 && (
                 <p className="text-gray-500 dark:text-gray-400">No pending tasks</p>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* AI Task Input Section */}
+        <div className="mt-8">
+          <div className="card">
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="w-6 h-6 text-primary-500" />
+              <h2 className="text-2xl font-semibold">Quick Add</h2>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Describe your task and AI will create and schedule it for you.
+            </p>
+
+            {/* Chat Messages */}
+            {AIMessages.length > 0 && (
+              <div className="mb-4 max-h-60 overflow-y-auto space-y-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                {AIMessages.map((message, index) => (
+                  <div
+                    key={index}
+                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[80%] p-3 rounded-lg whitespace-pre-line ${
+                        message.type === 'user'
+                          ? 'bg-primary-500 text-white'
+                          : 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600'
+                      }`}
+                    >
+                      {message.content}
+                    </div>
+                  </div>
+                ))}
+                {IsAIProcessing && (
+                  <div className="flex justify-start">
+                    <div className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 p-3 rounded-lg">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Input Form */}
+            <form onSubmit={HandleAISubmit} className="flex gap-3">
+              <input
+                type="text"
+                value={AIInput}
+                onChange={(e) => SetAIInput(e.target.value)}
+                placeholder='Use natural language to describe your task...'
+                className="input-field flex-1"
+                disabled={IsAIProcessing}
+              />
+              <button
+                type="submit"
+                disabled={!AIInput.trim() || IsAIProcessing}
+                className="btn-primary flex items-center gap-2 px-6"
+              >
+                {IsAIProcessing ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+                <span className="hidden sm:inline">Send</span>
+              </button>
+            </form>
+
+            {/* Example prompts */}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Try:</span>
+              {[
+                'Buy groceries tomorrow',
+                'Call mom this weekend',
+                'Submit assignment by Monday 9am, urgent',
+              ].map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => SetAIInput(example)}
+                  className="text-sm px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                  {example}
+                </button>
+              ))}
             </div>
           </div>
         </div>

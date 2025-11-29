@@ -28,14 +28,14 @@ const RegisterPage: React.FC = () => {
 
     SetIsLoading(true);
 
-    await Register(Name, Email, Password)
-      .then(() => {
-        Navigate('/dashboard', { replace: true });
-      })
-      .catch((Err: any) => {
-        SetError(Err.response?.data?.error || 'Registration failed. Please try again.');
-        SetIsLoading(false);
-      });
+    try {
+      await Register(Name, Email, Password);
+      Navigate('/dashboard', { replace: true });
+    } catch (Err: any) {
+      SetError(Err.response?.data?.error || 'Registration failed. Please try again.');
+    } finally {
+      SetIsLoading(false);
+    }
   };
 
   return (

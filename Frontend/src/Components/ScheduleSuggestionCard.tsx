@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock } from 'lucide-react';
+import { Calendar, Clock, RefreshCw } from 'lucide-react';
 
 interface ScheduleSuggestion {
   TaskId: string;
@@ -13,13 +13,15 @@ interface ScheduleSuggestion {
 interface ScheduleSuggestionCardProps {
   Suggestion: ScheduleSuggestion;
   OnAccept: (Suggestion: ScheduleSuggestion) => void;
-  OnReject: () => void;
+  OnReject: (Suggestion: ScheduleSuggestion) => void;
+  IsRescheduling?: boolean;
 }
 
 const ScheduleSuggestionCard: React.FC<ScheduleSuggestionCardProps> = ({
   Suggestion,
   OnAccept,
   OnReject,
+  IsRescheduling = false,
 }) => {
   const FormatDateTime = (DateString: string) => {
     const DateObj = new Date(DateString);
@@ -59,15 +61,20 @@ const ScheduleSuggestionCard: React.FC<ScheduleSuggestionCardProps> = ({
             </div>
           </div>
         </div>
-        <div className="flex space-x-2 ml-4">
+        <div className="flex flex-wrap gap-2 ml-4">
           <button
             onClick={() => OnAccept(Suggestion)}
             className="btn-primary text-sm py-1 px-3"
           >
             Accept
           </button>
-          <button onClick={OnReject} className="btn-secondary text-sm py-1 px-3">
-            Reject
+          <button
+            onClick={() => OnReject(Suggestion)}
+            disabled={IsRescheduling}
+            className="btn-secondary text-sm py-1 px-3 flex items-center"
+          >
+            <RefreshCw className={`w-3 h-3 mr-1 ${IsRescheduling ? 'animate-spin' : ''}`} />
+            {IsRescheduling ? 'Finding...' : 'New Time'}
           </button>
         </div>
       </div>

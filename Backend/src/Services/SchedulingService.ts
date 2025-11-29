@@ -1,51 +1,62 @@
-import { TaskModel, ITask } from '../Models/Task';
-import { EventModel, IEvent } from '../Models/Event';
 import { addMinutes, isBefore, isAfter, startOfDay, endOfDay, parseISO } from 'date-fns';
 
+import { TaskModel, ITask } from '../Models/Task';
+import { EventModel, IEvent } from '../Models/Event';
+
 interface TimeSlot {
+
   Start: Date;
   End: Date;
+
+}
+
+interface ScoredSlot extends TimeSlot {
+
+  Score: number;
+
 }
 
 interface ScheduleSuggestion {
+
   TaskId: string;
   TaskTitle: string;
   SuggestedStart: Date;
   SuggestedEnd: Date;
   Priority: string;
   EstimatedTime: number;
+
 }
 
 export class SchedulingService {
 
   /**
-   * Calculate priority score for a task
-   * Higher score = higher priority
-   */
-  private static CalculatePriorityScore(Task: ITask): number {
+   * Calculate task priority score (higher = schedule first)
+  */
+  private static CalculateTaskScore(Task: ITask): number {
 
     let Score = 0;
+    const Now = new Date();
 
-    // Base priority score
+    // Priority weight (0-100)
 
-    if (Task.Priority === 'high') Score += 100;
-    else if (Task.Priority === 'medium') Score += 50;
-    else Score += 25;
+    const PriorityWeights = { high: 100, medium: 50, low: 25 };
+    Score += PriorityWeights[Task.Priority] || 50;
 
-    // Due date urgency (higher score if due sooner)
+    // Due date urgency (0-100)
 
     if (Task.DueDate) {
 
-      const DaysUntilDue = Math.ceil((Task.DueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (DaysUntilDue <= 1) Score += 80;
+      const DaysUntilDue = Math.ceil((Task.DueDate.getTime() - Now.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (DaysUntilDue <= 0) Score += 100; // Overdue
+      else if (DaysUntilDue <= 1) Score += 80;
       else if (DaysUntilDue <= 3) Score += 60;
       else if (DaysUntilDue <= 7) Score += 40;
       else Score += 20;
 
     }
 
-    // Bonus for tasks with estimated time (easier to schedule)
+    // Bonus for having estimated time (easier to schedule accurately)
 
     if (Task.EstimatedTime) Score += 10;
 
@@ -54,60 +65,89 @@ export class SchedulingService {
   }
 
   /**
-   * Find available time slots between events
+   * Score a time slot for a task based on preferences
   */
-  private static FindAvailableSlots(Events: IEvent[], StartDate: Date, EndDate: Date, MinSlotDuration: number = 30): TimeSlot[] {
+  private static ScoreSlotForTask(Slot: TimeSlot, Task: ITask): number {
+
+    const TaskDuration = Task.EstimatedTime || 60;
+    const SlotDuration = (Slot.End.getTime() - Slot.Start.getTime()) / (1000 * 60);
     
+    if (SlotDuration < TaskDuration) return -1; // Slot must fit the task
+
+    let Score = 100; // Base score
+
+    const SlotHour = Slot.Start.getHours();
+
+    // Time: slight bonus for earlier in the day
+
+    Score += Math.max(0, 20 - (SlotHour - 9) * 2);
+
+    // Day preference: earlier days are slightly better (avoid procrastination)
+    
+    const DaysFromNow = Math.floor((Slot.Start.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    Score -= DaysFromNow * 5;
+
+    // Prefer slots that fit the task duration well (avoid fragmentation)
+
+    const WastedTime = SlotDuration - TaskDuration;
+
+    if (WastedTime < 30) Score += 15;
+    else if (WastedTime < 60) Score += 10;
+
+    // Penalty for very early or late slots
+
+    if (SlotHour < 8) Score -= 30;
+    if (SlotHour >= 20) Score -= 25;
+
+    return Score;
+
+  }
+
+  /**
+   * Find all available time slots for a day
+  */
+  private static FindAvailableSlots(BusySlots: TimeSlot[], DayStart: Date, DayEnd: Date, MinDuration: number = 30): TimeSlot[] {
+
     const Slots: TimeSlot[] = [];
-    const SortedEvents = Events.sort((a, b) => a.StartTime.getTime() - b.StartTime.getTime());
+    const Sorted = [...BusySlots].sort((a, b) => a.Start.getTime() - b.Start.getTime());
 
-    let CurrentTime = StartDate;
+    let CurrentTime = DayStart;
 
-    for (const Event of SortedEvents) {
+    for (const Busy of Sorted) {
 
-      if (!Event.Title) { continue; } // Skip invalid events
-      
-      if (isBefore(CurrentTime, Event.StartTime)) {
+      // If there's a gap before this busy slot
 
-        const SlotDuration = (Event.StartTime.getTime() - CurrentTime.getTime()) / (1000 * 60);
-        
-        if (SlotDuration >= MinSlotDuration) {
+      if (isBefore(CurrentTime, Busy.Start)) {
 
-          Slots.push({
+        const GapDuration = (Busy.Start.getTime() - CurrentTime.getTime()) / (1000 * 60);
 
-            Start: new Date(CurrentTime),
-            End: new Date(Event.StartTime),
+        if (GapDuration >= MinDuration) {
 
-          });
+          Slots.push({ Start: new Date(CurrentTime), End: new Date(Busy.Start) });
 
         }
 
       }
 
-      // Move current time to after this event
+      // Move past this busy slot
 
-      if (isAfter(Event.EndTime, CurrentTime)) {
+      if (isAfter(Busy.End, CurrentTime)) {
 
-        CurrentTime = Event.EndTime;
+        CurrentTime = new Date(Busy.End);
 
       }
 
     }
 
-    // Add final slot if there's time remaining in the day
+    // Add remaining time until day end
 
-    if (isBefore(CurrentTime, EndDate)) {
+    if (isBefore(CurrentTime, DayEnd)) {
 
-      const SlotDuration = (EndDate.getTime() - CurrentTime.getTime()) / (1000 * 60);
-      
-      if (SlotDuration >= MinSlotDuration) {
+      const GapDuration = (DayEnd.getTime() - CurrentTime.getTime()) / (1000 * 60);
 
-        Slots.push({
+      if (GapDuration >= MinDuration) {
 
-          Start: new Date(CurrentTime),
-          End: new Date(EndDate),
-
-        });
+        Slots.push({ Start: new Date(CurrentTime), End: new Date(DayEnd) });
 
       }
 
@@ -118,179 +158,157 @@ export class SchedulingService {
   }
 
   /**
-   * Find best time slot for a task
-   */
-  private static FindBestSlot( Task: ITask, AvailableSlots: TimeSlot[], PreferredTimeStart: number = 9, PreferredTimeEnd: number = 17 ): { Start: Date; End: Date } | null {
-    
-    const TaskDuration = Task.EstimatedTime || 60; // Default to 60 minutes
+   * Find the best slot for a task using ranking algorithm
+  */
+  private static FindBestSlotForTask(Task: ITask, AvailableSlots: TimeSlot[]): TimeSlot | null {
 
-    for (const Slot of AvailableSlots) {
+    const TaskDuration = Task.EstimatedTime || 60;
 
-      const SlotDuration = (Slot.End.getTime() - Slot.Start.getTime()) / (1000 * 60);
+    // Score all slots
+    const ScoredSlots: ScoredSlot[] = AvailableSlots.map(Slot => ({
 
-      if (SlotDuration >= TaskDuration) {
+      ...Slot,
+      Score: this.ScoreSlotForTask(Slot, Task),
 
-        // Check if slot is within preferred time
-        const SlotHour = Slot.Start.getHours();
-        
-        if (SlotHour >= PreferredTimeStart && SlotHour < PreferredTimeEnd) {
+    })).filter(Slot => Slot.Score > 0).sort((a, b) => b.Score - a.Score);
 
-          return {
+    if (ScoredSlots.length == 0) return null;
 
-            Start: Slot.Start,
-            End: addMinutes(Slot.Start, TaskDuration),
+    // Return the best slot, trimmed to task duration
 
-          };
+    const Best = ScoredSlots[0];
 
-        }
+    return {
 
-      }
+      Start: Best.Start,
+      End: addMinutes(Best.Start, TaskDuration),
+
+    };
+
+  }
+
+  /**
+   * Get working hours for a day, accounting for current time if today
+  */
+ 
+  private static GetWorkingHours(DayStart: Date, Now: Date): { start: Date; end: Date } | null {
+
+    const WorkStart = addMinutes(DayStart, 9 * 60);  // 9 AM
+    const WorkEnd = addMinutes(DayStart, 21 * 60);   // 9 PM
+    const IsToday = DayStart.toDateString() === Now.toDateString();
+
+    if (IsToday) {
+
+      // Round current time up to next 15 minutes
+
+      const RoundedNow = new Date(Now);
+      const Minutes = Math.ceil(RoundedNow.getMinutes() / 15) * 15;
+      RoundedNow.setMinutes(Minutes, 0, 0);
+
+      // If past work hours, skip today
+      if (isAfter(RoundedNow, WorkEnd)) return null;
+
+      return {
+
+        start: isAfter(RoundedNow, WorkStart) ? RoundedNow : WorkStart,
+        end: WorkEnd,
+
+      };
 
     }
 
-    // If no preferred slot found, use any available slot
-
-    for (const Slot of AvailableSlots) {
-
-      const SlotDuration = (Slot.End.getTime() - Slot.Start.getTime()) / (1000 * 60);
-
-      if (SlotDuration >= TaskDuration) {
-
-        return {
-
-          Start: Slot.Start,
-          End: addMinutes(Slot.Start, TaskDuration),
-
-        };
-
-      }
-
-    }
-
-    return null;
+    return { start: WorkStart, end: WorkEnd };
 
   }
 
   /**
    * Generate schedule suggestions for unscheduled tasks
-  */
+   */
   static async GenerateScheduleSuggestions(UserID: string, StartDate?: string, EndDate?: string): Promise<ScheduleSuggestion[]> {
-    
-    // Default to next 7 days if not specified
 
-    const Start = StartDate ? parseISO(StartDate) : startOfDay(new Date());
+    const Now = new Date();
+    const Start = StartDate ? parseISO(StartDate) : startOfDay(Now);
     const End = EndDate ? parseISO(EndDate) : endOfDay(addMinutes(Start, 7 * 24 * 60));
 
-    return Promise.all([
+    try {
 
-      TaskModel.find({
+      const [UnscheduledTasks, Events] = await Promise.all([
+        
+        TaskModel.find({ UserID, Status: { $ne: 'completed' }, IsScheduled: false }),
+        EventModel.find({ UserID, StartTime: { $lt: End }, EndTime: { $gt: Start } }),
 
-        UserID,
-        Status: { $ne: 'completed' },
-        IsScheduled: false,
+      ]);
 
-      }),
+      // Sort tasks by priority score (highest first)
 
-      EventModel.find({
+      const SortedTasks = [...UnscheduledTasks].sort((a, b) => this.CalculateTaskScore(b) - this.CalculateTaskScore(a));
 
-        UserID,
-        StartTime: { $lt: End },
-        EndTime: { $gt: Start },
+      // Convert events to busy slots
 
-      })
+      const EventBusySlots: TimeSlot[] = Events.map(e => ({ Start: e.StartTime, End: e.EndTime }));
 
-    ]).then(([UnscheduledTasks, Events]) => {
+      // Collect ALL available slots across ALL days first
 
-      // Sort tasks by priority score
-
-      const SortedTasks = UnscheduledTasks.sort((a, b) => this.CalculatePriorityScore(b) - this.CalculatePriorityScore(a));
-      
-      const Suggestions: ScheduleSuggestion[] = [];
-      const ScheduledSlots: TimeSlot[] = [];
-
-      // Find available time slots
-
-      let CurrentDayStart = Start;
+      const AllAvailableSlots: TimeSlot[] = [];
       
       for (let Day = 0; Day < 7; Day++) {
 
-        const DayStart = startOfDay(addMinutes(CurrentDayStart, Day * 24 * 60));
-        const DayEnd = endOfDay(DayStart);
-
-        // Get events for this day
-
-        const DayEvents = Events.filter(e => e.StartTime <= DayEnd && e.EndTime >= DayStart);
-
-        // Combine with already scheduled slots
-
-        const AllBusySlots = [...DayEvents, ...ScheduledSlots.map(s => ({
-
-          StartTime: s.Start,
-          EndTime: s.End,
-          Title: 'Scheduled Task',
-
-        } as any))];
-
-        const AvailableSlots = this.FindAvailableSlots(AllBusySlots, addMinutes(DayStart, 9 * 60), addMinutes(DayStart, 21 * 60));
+        const DayStart = startOfDay(addMinutes(Start, Day * 24 * 60));
+        const WorkHours = this.GetWorkingHours(DayStart, Now);
         
-        // Try to schedule tasks in available slots
+        if (!WorkHours) continue;
 
-        for (const Task of SortedTasks) {
+        // Get busy slots for this day (only events, not allocated yet)
 
-          if (Suggestions.find(s => s.TaskId === Task._id.toString())) {
+        const DayBusySlots = EventBusySlots.filter(
+          s => s.Start < WorkHours.end && s.End > WorkHours.start
+        );
 
-            continue; // Already scheduled
+        const DaySlots = this.FindAvailableSlots(DayBusySlots, WorkHours.start, WorkHours.end);
+        AllAvailableSlots.push(...DaySlots);
 
-          }
+      }
 
-          const BestSlot = this.FindBestSlot(Task, AvailableSlots);
+      const Suggestions: ScheduleSuggestion[] = [];
+      const AllocatedSlots: TimeSlot[] = [];
+
+      // For each task, find the BEST slot across ALL days
+
+      for (const Task of SortedTasks) {
+        const TaskDuration = Task.EstimatedTime || 60;
+
+        // Filter out slots that conflict with already allocated slots
+
+        const AvailableForTask = AllAvailableSlots.filter(slot => {
+
+          // Check if this slot (or the portion we'd use) conflicts with allocated slots
+
+          const PotentialEnd = addMinutes(slot.Start, TaskDuration);
+
+          return !AllocatedSlots.some(Allocated => slot.Start < Allocated.End && PotentialEnd > Allocated.Start);
+
+        });
+
+        // Find the best slot for this task
+
+        const BestSlot = this.FindBestSlotForTask(Task, AvailableForTask);
+        
+        if (BestSlot) {
           
-          if (BestSlot) {
+          Suggestions.push({
 
-            Suggestions.push({
+            TaskId: Task._id.toString(),
+            TaskTitle: Task.Title,
+            SuggestedStart: BestSlot.Start,
+            SuggestedEnd: BestSlot.End,
+            Priority: Task.Priority,
+            EstimatedTime: TaskDuration,
 
-              TaskId: Task._id.toString(),
-              TaskTitle: Task.Title,
-              SuggestedStart: BestSlot.Start,
-              SuggestedEnd: BestSlot.End,
-              Priority: Task.Priority,
-              EstimatedTime: Task.EstimatedTime || 60,
+          });
 
-            });
+          // Mark this slot as allocated
 
-            // Mark this slot as occupied
-
-            ScheduledSlots.push(BestSlot);
-            
-            // Update available slots
-
-            const SlotIndex = AvailableSlots.findIndex(s => s.Start.getTime() === BestSlot.Start.getTime());
-            
-            if (SlotIndex != -1) {
-
-              const UsedSlot = AvailableSlots[SlotIndex];
-              AvailableSlots.splice(SlotIndex, 1);
-              
-              // If there is remaining time in the slot, add it back as a new slot
-
-              if (BestSlot.End.getTime() < UsedSlot.End.getTime()) {
-
-                AvailableSlots.push({
-
-                  Start: BestSlot.End,
-                  End: UsedSlot.End
-
-                });
-                
-                // Sort slots by start time to maintain order
-
-                AvailableSlots.sort((a, b) => a.Start.getTime() - b.Start.getTime());
-
-              }
-
-            }
-
-          }
+          AllocatedSlots.push(BestSlot);
 
         }
 
@@ -298,36 +316,172 @@ export class SchedulingService {
 
       return Suggestions;
 
-    }).catch((error) => {
+    } catch (error) {
 
       console.error('Error generating schedule suggestions:', error);
       throw error;
 
-    });
+    }
 
   }
 
   /**
-   * Apply a schedule suggestion (mark task as scheduled)
+   * Apply a schedule suggestion (mark task as scheduled and create calendar event)
    */
-  static async ApplyScheduleSuggestion(UserID: string, TaskId: string, ScheduledStart: Date, ScheduledEnd: Date): Promise<ITask | null> {
+  static async ApplyScheduleSuggestion(UserID: string, TaskId: string, ScheduledStart: Date, ScheduledEnd: Date): Promise<{ task: ITask | null; event: IEvent | null }> {
+          
+    const UpdatedTask = await TaskModel.findOneAndUpdate({ _id: TaskId, UserID }, { IsScheduled: true, ScheduledStartTime: ScheduledStart, ScheduledEndTime: ScheduledEnd, }, { new: true } );
 
-    return await TaskModel.findOneAndUpdate(
+    if (!UpdatedTask) {
+
+      return { task: null, event: null };
+
+    }
     
-      { _id: TaskId, UserID },
-      {
-        IsScheduled: true,
-        ScheduledStartTime: ScheduledStart,
-        ScheduledEndTime: ScheduledEnd,
-      },
-      { new: true }
+    const PriorityColors = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' }; // Create calendar event for the scheduled task (ported from frontend)
+    
+    const NewEvent = new EventModel({
 
-    ).catch((error) => {
-
-      console.error('Error applying schedule suggestion:', error);
-      throw error;
+      UserID,
+      Title: UpdatedTask.Title,
+      Description: UpdatedTask.Description || `Scheduled task: ${UpdatedTask.Title}`,
+      StartTime: ScheduledStart,
+      EndTime: ScheduledEnd,
+      Category: UpdatedTask.Category || 'Task',
+      Color: PriorityColors[UpdatedTask.Priority] || '#0ea5e9',
+      IsRecurring: false,
+      IsAllDay: false,
+      Reminders: [15],
 
     });
+
+    const SavedEvent = await NewEvent.save().catch(error => {
+
+      console.error('Error creating calendar event for task:', error);
+      return null;
+
+    });
+
+    return { task: UpdatedTask, event: SavedEvent };
+    
+  }
+
+  /**
+   * Generate a new suggestion for a specific task, excluding a previously suggested time
+   */
+  static async GenerateSingleTaskSuggestion( UserID: string, TaskId: string, ExcludedStart?: Date ): Promise<ScheduleSuggestion | null> { const Now = new Date();
+    
+    const Start = startOfDay(Now);
+    const End = endOfDay(addMinutes(Start, 7 * 24 * 60));
+
+    try {
+
+      const [Task, Events, ScheduledTasks] = await Promise.all([
+        
+        TaskModel.findOne({ _id: TaskId, UserID }),
+        EventModel.find({ UserID, StartTime: { $lt: End }, EndTime: { $gt: Start } }),
+        TaskModel.find({
+
+          UserID,
+          _id: { $ne: TaskId },
+          IsScheduled: true,
+          ScheduledStartTime: { $lt: End },
+          ScheduledEndTime: { $gt: Start },
+
+        }),
+
+      ]);
+
+      if (!Task) return null;
+
+      const TaskDuration = Task.EstimatedTime || 60;
+
+      // Build busy slots from events and other scheduled tasks
+
+      const BusySlots: TimeSlot[] = [
+
+        ...Events.map(e => ({ Start: e.StartTime, End: e.EndTime })),
+        ...ScheduledTasks.map(t => ({ Start: t.ScheduledStartTime!, End: t.ScheduledEndTime! })),
+
+      ];
+
+      // Add excluded time as busy to avoid suggesting same slot
+
+      if (ExcludedStart) {
+
+        BusySlots.push({ Start: ExcludedStart, End: addMinutes(ExcludedStart, TaskDuration) });
+
+      }
+
+      // Collect ALL available slots across ALL days
+
+      const AllAvailableSlots: TimeSlot[] = [];
+      
+      for (let Day = 0; Day < 7; Day++) {
+
+        const DayStart = startOfDay(addMinutes(Start, Day * 24 * 60));
+        const WorkHours = this.GetWorkingHours(DayStart, Now);
+        
+        if (!WorkHours) continue;
+
+        const DayBusySlots = BusySlots.filter(s => s.Start < WorkHours.end && s.End > WorkHours.start);
+        const DaySlots = this.FindAvailableSlots(DayBusySlots, WorkHours.start, WorkHours.end, TaskDuration);
+
+        AllAvailableSlots.push(...DaySlots);
+
+      }
+
+      // Find the best slot across all days
+
+      const BestSlot = this.FindBestSlotForTask(Task, AllAvailableSlots);
+      
+      if (BestSlot) {
+
+        // Double-check it's not the excluded time
+
+        if (ExcludedStart && BestSlot.Start.getTime() == ExcludedStart.getTime()) {
+
+          // Try to find another slot by removing this one
+
+          const FilteredSlots = AllAvailableSlots.filter(s => s.Start.getTime() != ExcludedStart.getTime());
+          const AlternativeSlot = this.FindBestSlotForTask(Task, FilteredSlots);
+
+          if (!AlternativeSlot) return null;
+          
+          return {
+
+            TaskId: Task._id.toString(),
+            TaskTitle: Task.Title,
+            SuggestedStart: AlternativeSlot.Start,
+            SuggestedEnd: AlternativeSlot.End,
+            Priority: Task.Priority,
+            EstimatedTime: TaskDuration,
+
+          };
+
+        }
+
+        return {
+
+          TaskId: Task._id.toString(),
+          TaskTitle: Task.Title,
+          SuggestedStart: BestSlot.Start,
+          SuggestedEnd: BestSlot.End,
+          Priority: Task.Priority,
+          EstimatedTime: TaskDuration,
+
+        };
+
+      }
+
+      return null;
+
+    } catch (error) {
+
+      console.error('Error generating single task suggestion:', error);
+      throw error;
+
+    }
 
   }
 
@@ -335,50 +489,47 @@ export class SchedulingService {
    * Automatically reschedule tasks when conflicts arise
   */
   static async RescheduleConflictingTasks(UserID: string, NewEvent: IEvent): Promise<ScheduleSuggestion[]> {
-    
-    return await TaskModel.find({
 
-      UserID,
-      IsScheduled: true,
-      ScheduledStartTime: { $lt: NewEvent.EndTime },
-      ScheduledEndTime: { $gt: NewEvent.StartTime },
+    try {
 
-    }).then(async (ConflictingTasks) => {
+      const ConflictingTasks = await TaskModel.find({
 
-      if (ConflictingTasks.length == 0) {
+        UserID,
+        IsScheduled: true,
+        ScheduledStartTime: { $lt: NewEvent.EndTime },
+        ScheduledEndTime: { $gt: NewEvent.StartTime },
 
-        return [];
+      });
 
-      }
+      if (ConflictingTasks.length === 0) return [];
 
       // Unschedule conflicting tasks
 
-      const SavePromises = ConflictingTasks.map(Task => {
+      await Promise.all(
 
-        Task.IsScheduled = false;
-        Task.ScheduledStartTime = undefined;
-        Task.ScheduledEndTime = undefined;
+        ConflictingTasks.map(Task => {
 
-        return Task.save();
+          Task.IsScheduled = false;
+          Task.ScheduledStartTime = undefined;
+          Task.ScheduledEndTime = undefined;
+          return Task.save();
 
-      });
-      
-      await Promise.all(SavePromises);
+        })
 
-      // Generate new suggestions for these tasks
+      );
 
-      return this.GenerateScheduleSuggestions(UserID).then(Suggestions => {
+      // Generate new suggestions
 
-        return Suggestions.filter(s => ConflictingTasks.find(t => t._id.toString() == s.TaskId));
+      const AllSuggestions = await this.GenerateScheduleSuggestions(UserID);
 
-      });
+      return AllSuggestions.filter(s => ConflictingTasks.some(t => t._id.toString() == s.TaskId));
 
-    }).catch((error) => {
+    } catch (error) {
 
       console.error('Error rescheduling conflicting tasks:', error);
       throw error;
 
-    });
+    }
 
   }
 

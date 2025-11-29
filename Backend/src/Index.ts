@@ -9,6 +9,7 @@ import TaskRoutes from './Routes/TaskRoutes';
 import CalendarRoutes from './Routes/CalendarRoutes';
 import UserRoutes from './Routes/UserRoutes';
 import ScheduleRoutes from './Routes/ScheduleRoutes';
+import AIRoutes from './Routes/AIRoutes';
 
 const App = new Hono();
 
@@ -23,6 +24,7 @@ App.route('/api/users', UserRoutes);
 App.route('/api/tasks', TaskRoutes);
 App.route('/api/calendar', CalendarRoutes);
 App.route('/api/schedule', ScheduleRoutes);
+App.route('/api/ai', AIRoutes);
 
 // Serve static files
 

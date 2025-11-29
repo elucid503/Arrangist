@@ -19,11 +19,11 @@ export const ComparePassword = async (Password: string, HashedPassword: string):
 
 export const GenerateToken = (UserID: string): string => {
 
-  return jwt.sign({ UserID }, JwtSecret, { expiresIn: JwtExpiresIn as any });
+  return jwt.sign({ UserId: UserID }, JwtSecret, { expiresIn: JwtExpiresIn as any });
 
 };
 
-export const VerifyToken = async (Token: string): Promise<{ UserID: string }> => {
+export const VerifyToken = async (Token: string): Promise<{ UserId: string }> => {
 
   return new Promise((resolve, reject) => {
 
@@ -35,7 +35,8 @@ export const VerifyToken = async (Token: string): Promise<{ UserID: string }> =>
 
       } else {
 
-        resolve(decoded as { UserID: string });
+        const Payload = decoded as { UserId: string };
+        resolve({ UserId: Payload.UserId });
 
       }
     });

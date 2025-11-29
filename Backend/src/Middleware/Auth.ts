@@ -4,7 +4,7 @@ import { VerifyToken } from '../Utils/Auth';
 
 export interface AuthContext {
 
-  UserID: string;
+  UserId: string;
 
 }
 
@@ -20,22 +20,25 @@ export const AuthMiddleware = async (c: Context, next: Next) => {
 
   const Token = AuthHeader.substring(7);
   
-  return await VerifyToken(Token).then(async (Payload) => {
+  try {
 
-    c.set('UserID', Payload.UserID);
+    const Payload = await VerifyToken(Token);
+    c.set('UserId', Payload.UserId);
+    
     await next();
     
-  }).catch(() => {
+  } catch (err) {
 
+    console.error('AuthMiddleware: Error', err);
     return c.json({ error: 'Invalid or expired token' }, 401);
     
-  });
+  }
   
 };
 
 export const GetUserID = (c: Context): string => {
 
-  const UserID = c.get('UserID');
+  const UserID = c.get('UserId');
 
   if (!UserID) {
 

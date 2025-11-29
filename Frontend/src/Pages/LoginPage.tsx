@@ -15,14 +15,14 @@ const LoginPage: React.FC = () => {
     SetError('');
     SetIsLoading(true);
 
-    await Login(Email, Password)
-      .then(() => {
-        Navigate('/dashboard', { replace: true });
-      })
-      .catch((Err: any) => {
-        SetError(Err.response?.data?.error || 'Login failed. Please try again.');
-        SetIsLoading(false);
-      });
+    try {
+      await Login(Email, Password);
+      Navigate('/dashboard', { replace: true });
+    } catch (Err: any) {
+      SetError(Err.response?.data?.error || 'Login failed. Please try again.');
+    } finally {
+      SetIsLoading(false);
+    }
   };
 
   return (
