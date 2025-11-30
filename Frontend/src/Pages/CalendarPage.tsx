@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, List, Grid, Download } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, List, Grid, Download, Pin } from 'lucide-react';
 
 import Navbar, { MobileNav } from '../Components/Navbar';
 import EventCard from '../Components/EventCard';
@@ -530,9 +530,9 @@ const CalendarPage: React.FC = () => {
 
                           {event.Location && (
 
-                            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            <div className="flex gap-0.5 text-xs text-gray-500 dark:text-gray-400 mt-1">
 
-                              {event.Location}
+                              <Pin className="w-3.5 h-3.5"/> {event.Location}
                               
                             </div>
 

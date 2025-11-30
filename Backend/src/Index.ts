@@ -28,8 +28,8 @@ App.route('/api/ai', AIRoutes);
 
 // Serve static files
 
-App.get('*', serveStatic({ path: 'index.html', root: "../Frontend/dist" })); // Serve index.html for single page app
 App.get('/assets/*', serveStatic({ root: "../Frontend/dist" })); // Serve assets
+App.get('*', serveStatic({ path: 'index.html', root: "../Frontend/dist" })); // Serve index.html for single page app
 
 // Error handling
 
