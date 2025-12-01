@@ -21,6 +21,7 @@ export const TaskSchema = z.object({
   Description: z.string().optional(),
   DueDate: z.string().optional(),
   Category: z.string().optional(),
+  Course: z.string().optional(),
   Priority: z.enum(['low', 'medium', 'high']).default('medium'),
   EstimatedTime: z.number().min(0).optional(),
   Status: z.enum(['pending', 'in-progress', 'completed']).default('pending'),

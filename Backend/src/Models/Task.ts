@@ -17,6 +17,7 @@ export interface ITask extends Document {
   Title: string;
   Description?: string;
   Category?: string;
+  Course?: string;
 
   DueDate?: Date;
   
@@ -73,6 +74,10 @@ const TaskSchema = new Schema<ITask>({
     trim: true,
   },
   Description: {
+    type: String,
+    trim: true,
+  },
+  Course: {
     type: String,
     trim: true,
   },
