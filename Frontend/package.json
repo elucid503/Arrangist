@@ -1,7 +1,7 @@
 {
-  "name": "smartassign-frontend",
+  "name": "arrangist-frontend",
   "version": "1.0.0",
-  "description": "SmartAssign - Automated Time Management Frontend",
+  "description": "Arrangist - Automated Time Management Frontend",
   "type": "module",
   "scripts": {
     "dev": "vite",

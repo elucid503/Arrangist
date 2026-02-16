@@ -39,7 +39,7 @@ const Navbar: React.FC = () => {
 
             <Link to="/dashboard" className="flex items-center">
               
-              <span className="text-2xl font-bold text-primary-600">SmartAssign</span>
+              <span className="text-2xl font-bold text-primary-600">Arrangist</span>
 
             </Link>
 

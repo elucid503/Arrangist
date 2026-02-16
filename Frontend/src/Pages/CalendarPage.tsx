@@ -183,7 +183,7 @@ const CalendarPage: React.FC = () => {
       const Link = document.createElement('a');
 
       Link.href = RespBlobURL;
-      Link.download = 'smartassign-calendar.ics';
+      Link.download = 'arrangist-calendar.ics';
 
       document.body.appendChild(Link);
 

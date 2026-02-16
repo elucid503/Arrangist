@@ -1,7 +1,7 @@
 {
-  "name": "smartassign-backend",
+  "name": "arrangist-backend",
   "version": "1.0.0",
-  "description": "SmartAssign - Automated Time Management Backend",
+  "description": "Arrangist - Automated Time Management Backend",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/Index.ts",

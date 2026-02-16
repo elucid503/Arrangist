@@ -188,12 +188,12 @@ export class CalendarController {
 
       // Simple ICS format
       
-      let IcsContent = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartAssign//Calendar//EN\n';
+      let IcsContent = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Arrangist//Calendar//EN\n';
         
       Events.forEach(E => {
           
         IcsContent += 'BEGIN:VEVENT\n';
-        IcsContent += `UID:${E._id}@smartassign.app\n`;
+        IcsContent += `UID:${E._id}@arrangist.app\n`;
         IcsContent += `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n`;
         IcsContent += `DTSTART:${E.StartTime.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n`;
         IcsContent += `DTEND:${E.EndTime.toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n`;

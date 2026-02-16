@@ -1,8 +1,8 @@
-# SmartAssign
+# Arrangist
 
 ## Summary
 
-SmartAssign is an automated time management application that intelligently sorts and schedules tasks based on urgency, due date, and estimated completion time. The system bridges the gap between overly complex tools and basic to-do lists, offering a balance of simplicity and smart functionality.
+Arrangist is an automated time management application that intelligently sorts and schedules tasks based on urgency, due date, and estimated completion time. The system bridges the gap between overly complex tools and basic to-do lists, offering a balance of simplicity and smart functionality.
 
 ## Features
 
