@@ -3,6 +3,25 @@ import { addMinutes, isBefore, isAfter, startOfDay, endOfDay, parseISO } from 'd
 import { TaskModel, ITask } from '../Models/Task';
 import { EventModel, IEvent } from '../Models/Event';
 
+// Lean types for memory-efficient queries (plain JS objects, not Mongoose documents)
+interface LeanTask {
+  _id: any;
+  Title: string;
+  Priority: 'low' | 'medium' | 'high';
+  EstimatedTime?: number;
+  DueDate?: Date;
+}
+
+interface LeanEvent {
+  StartTime: Date;
+  EndTime: Date;
+}
+
+interface LeanScheduledTask {
+  ScheduledStartTime?: Date;
+  ScheduledEndTime?: Date;
+}
+
 interface TimeSlot {
 
   Start: Date;
@@ -32,7 +51,7 @@ export class SchedulingService {
   /**
    * Calculate task priority score (higher = schedule first)
   */
-  private static CalculateTaskScore(Task: ITask): number {
+  private static CalculateTaskScore(Task: LeanTask): number {
 
     let Score = 0;
     const Now = new Date();
@@ -67,7 +86,7 @@ export class SchedulingService {
   /**
    * Score a time slot for a task based on preferences
   */
-  private static ScoreSlotForTask(Slot: TimeSlot, Task: ITask): number {
+  private static ScoreSlotForTask(Slot: TimeSlot, Task: LeanTask): number {
 
     const TaskDuration = Task.EstimatedTime || 60;
     const SlotDuration = (Slot.End.getTime() - Slot.Start.getTime()) / (1000 * 60);
@@ -159,30 +178,38 @@ export class SchedulingService {
 
   /**
    * Find the best slot for a task using ranking algorithm
+   * Optimized to avoid creating large intermediate arrays
   */
-  private static FindBestSlotForTask(Task: ITask, AvailableSlots: TimeSlot[]): TimeSlot | null {
+  private static FindBestSlotForTask(Task: LeanTask, AvailableSlots: TimeSlot[]): TimeSlot | null {
 
     const TaskDuration = Task.EstimatedTime || 60;
 
-    // Score all slots
-    const ScoredSlots: ScoredSlot[] = AvailableSlots.map(Slot => ({
+    // Finds best slot in single pass to avoid memory allocation for large arrays
 
-      ...Slot,
-      Score: this.ScoreSlotForTask(Slot, Task),
+    let BestSlot: TimeSlot | null = null;
+    let BestScore = 0;
 
-    })).filter(Slot => Slot.Score > 0).sort((a, b) => b.Score - a.Score);
+    for (const Slot of AvailableSlots) {
 
-    if (ScoredSlots.length == 0) return null;
+      const Score = this.ScoreSlotForTask(Slot, Task);
+
+      if (Score > BestScore) {
+
+        BestScore = Score;
+        BestSlot = Slot;
+        
+      }
+    }
+
+    if (!BestSlot) return null;
 
     // Return the best slot, trimmed to task duration
 
-    const Best = ScoredSlots[0];
-
     return {
 
-      Start: Best.Start,
-      End: addMinutes(Best.Start, TaskDuration),
-
+      Start: BestSlot.Start,
+      End: addMinutes(BestSlot.Start, TaskDuration),
+      
     };
 
   }
@@ -223,6 +250,7 @@ export class SchedulingService {
 
   /**
    * Generate schedule suggestions for unscheduled tasks
+   * Optimized to limit memory usage with bounded arrays
   */
   static async GenerateScheduleSuggestions(UserID: string, StartDate?: string, EndDate?: string): Promise<ScheduleSuggestion[]> {
 
@@ -230,12 +258,16 @@ export class SchedulingService {
     const Start = StartDate ? parseISO(StartDate) : startOfDay(Now);
     const End = EndDate ? parseISO(EndDate) : endOfDay(addMinutes(Start, 7 * 24 * 60)); // Next 7 days
 
+    // Limit number of tasks to prevent unbounded memory growth
+    const MAX_TASKS = 50;
+    const MAX_DAYS = 7;
+
     try {
 
       const [UnscheduledTasks, Events] = await Promise.all([
         
-        TaskModel.find({ UserID, Status: { $ne: 'completed' }, IsScheduled: false }),
-        EventModel.find({ UserID, StartTime: { $lt: End }, EndTime: { $gt: Start } }),
+        TaskModel.find({ UserID, Status: { $ne: 'completed' }, IsScheduled: false }).limit(MAX_TASKS).lean(),
+        EventModel.find({ UserID, StartTime: { $lt: End }, EndTime: { $gt: Start } }).lean(),
 
       ]);
 
@@ -250,8 +282,9 @@ export class SchedulingService {
       // Collect ALL available slots across ALL days first
 
       const AllAvailableSlots: TimeSlot[] = [];
+      const daysToProcess = Math.min(MAX_DAYS, 7);
       
-      for (let Day = 0; Day < 7; Day++) {
+      for (let Day = 0; Day < daysToProcess; Day++) {
 
         const DayStart = startOfDay(addMinutes(Start, Day * 24 * 60));
         const WorkHours = this.GetWorkingHours(DayStart, Now);
@@ -275,6 +308,7 @@ export class SchedulingService {
       // For each task, find the BEST slot across ALL days
 
       for (const Task of SortedTasks) {
+
         const TaskDuration = Task.EstimatedTime || 60;
 
         // Filter out slots that conflict with already allocated slots
@@ -368,9 +402,10 @@ export class SchedulingService {
 
   /**
    * Generate a new suggestion for a specific task, excluding a previously suggested time
+   * Optimized with lean queries
    */
-  static async GenerateSingleTaskSuggestion( UserID: string, TaskId: string, ExcludedStart?: Date ): Promise<ScheduleSuggestion | null> { const Now = new Date();
-    
+  static async GenerateSingleTaskSuggestion( UserID: string, TaskId: string, ExcludedStart?: Date ): Promise<ScheduleSuggestion | null> { 
+    const Now = new Date();
     const Start = startOfDay(Now);
     const End = endOfDay(addMinutes(Start, 7 * 24 * 60));
 
@@ -378,8 +413,8 @@ export class SchedulingService {
 
       const [Task, Events, ScheduledTasks] = await Promise.all([
         
-        TaskModel.findOne({ _id: TaskId, UserID }),
-        EventModel.find({ UserID, StartTime: { $lt: End }, EndTime: { $gt: Start } }),
+        TaskModel.findOne({ _id: TaskId, UserID }).lean(),
+        EventModel.find({ UserID, StartTime: { $lt: End }, EndTime: { $gt: Start } }).lean(),
         TaskModel.find({
 
           UserID,
@@ -388,7 +423,7 @@ export class SchedulingService {
           ScheduledStartTime: { $lt: End },
           ScheduledEndTime: { $gt: Start },
 
-        }),
+        }).lean(),
 
       ]);
 

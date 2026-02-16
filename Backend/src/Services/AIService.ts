@@ -1,10 +1,23 @@
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
+// Lazy singleton pattern to avoid memory leaks from multiple client instantiations
+let OpenAIClient: OpenAI | null = null;
 
-    apiKey: process.env.OPENAI_API_KEY,
-    
-});
+function getOpenAIClient(): OpenAI {
+
+    if (!OpenAIClient) {
+
+        OpenAIClient = new OpenAI({
+
+            apiKey: process.env.OPENAI_API_KEY,
+
+        });
+
+    }
+
+    return OpenAIClient;
+
+}
 
 interface ParsedTask {
 
@@ -41,7 +54,7 @@ export class AIService {
             
         `;
 
-        const AIRes = await openai.chat.completions.create({
+        const AIRes = await getOpenAIClient().chat.completions.create({
             
             model: 'gpt-4o-mini',
             messages: [

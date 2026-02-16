@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { serveStatic } from 'hono/bun';
 
-import { ConnectDatabase } from './Config/Database';
+import { ConnectDatabase, DisconnectDatabase } from './Config/Database';
 
 import TaskRoutes from './Routes/TaskRoutes';
 import CalendarRoutes from './Routes/CalendarRoutes';
@@ -61,5 +61,19 @@ const StartServer = async () => {
 };
 
 StartServer();
+
+const Shutdown = async (Sig: string) => { // Graceful shutdown to prevent memory leaks from unclosed connections
+
+  console.log(`\n${Sig} received. Shutting down...`);
+  
+  await DisconnectDatabase();
+  
+  console.log('Cleanup complete. Exiting.');
+  process.exit(0);
+
+};
+
+process.on('SIGTERM', () => Shutdown('SIGTERM'));
+process.on('SIGINT', () => Shutdown('SIGINT'));
 
 export default App;
