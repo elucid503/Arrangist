@@ -51,7 +51,7 @@ const LoginPage: React.FC = () => {
 
         <p className="text-center text-gray-600 dark:text-gray-400 mb-8">
 
-          Automated Time Management
+          Arrange your Life
 
         </p>
 

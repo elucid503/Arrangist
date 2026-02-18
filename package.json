@@ -1,7 +1,7 @@
 {
   "name": "arrangist-root",
   "version": "1.0.0",
-  "description": "Arrangist - Automated Time Management System",
+  "description": "Arrangist - Arrange your Life",
   "scripts": {
     "install:all": "cd Backend && bun install && cd ../Frontend && bun install",
     "dev:backend": "cd Backend && bun run dev",
